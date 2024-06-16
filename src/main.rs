@@ -16,8 +16,9 @@ pub struct Shortcut {
 }
 
 pub struct ShortcutPath {
-    pub parent: PathVariant,
+    pub parent: String,
     pub child: String,
+    pub kind: PathKind,
 }
 
 // PathKind & PathVariant
@@ -27,25 +28,19 @@ pub enum PathKind {
     Environment,
 }
 
-#[derive(Clone, Debug)]
-pub struct PathVariant {
-    pub path: String,
-    pub kind: PathKind,
-}
-
 pub trait ToEnv {
     fn to_env_path(&self) -> PathBuf;
 }
 
 impl ToEnv for ShortcutPath {
     fn to_env_path(&self) -> PathBuf {
-        match self.parent.kind {
+        match self.kind {
             PathKind::Standard => {
-                let parent = "$".to_owned() + &self.parent.path;
+                let parent = "$".to_owned() + &self.parent;
                 PathBuf::from(parent).join(PathBuf::from(self.child.clone()))
             },
             PathKind::Environment => {
-                PathBuf::from(self.parent.path.clone())
+                PathBuf::from(self.parent.clone())
             },
         }
     }
@@ -68,23 +63,19 @@ pub fn get_home_dir() -> PathBuf {
 }
 
 pub fn get_path_variant(fp: &Path) -> PathKind {
-    if dirs::home_dir().is_some() 
-        && (fp.starts_with("~")
-        || fp.starts_with("$HOME")
-        || fp.starts_with("${HOME}")) {
-            return PathKind::Environment
+    let starts_with = |base| fp.starts_with(base);
+
+    if dirs::home_dir().is_some() && (
+        starts_with("~")
+        || starts_with("$HOME")
+        || starts_with("${HOME}")) {
+        return PathKind::Environment
     }
     PathKind::Standard
 }
 
-pub fn convert_parent_path(fp: &Path, path_kind: PathKind) -> PathVariant {
-    let path = match path_kind {
-        PathKind::Standard => { fp.parent().unwrap().file_name().unwrap().to_os_string().into_string().unwrap() },
-        PathKind::Environment => {
-            "~".to_owned()
-        }
-    };
-    PathVariant { path, kind: path_kind }
+pub fn convert_parent_path(fp: &Path) -> String  {
+    fp.parent().unwrap().file_name().unwrap().to_os_string().into_string().unwrap()
 }
 
 pub fn convert_child_path(fp: &Path) -> String {
@@ -114,13 +105,14 @@ pub fn to_shortcut_paths(folders: Vec<walkdir::DirEntry>) -> Vec<ShortcutPath> {
             // - "$HOME/my-folder"
             // - "/home/user/my-folder"
 
-            let path_kind = get_path_variant(&fp);
-            println!("Path Kind: {:?}", path_kind);
+            //let path_kind = get_path_variant(&fp);
+            //println!("Path Kind: {:?}", path_kind);
 
-            let path_variant = convert_parent_path(&fp, path_kind);
-            println!("Path Variant: {:?}", path_variant);
+            //let path_variant = convert_parent_path(&fp, path_kind);
+            //println!("Path Variant: {:?}", path_variant);
+            let parent = fp.parent().unwrap().file_name().unwrap().to_os_string().into_string().unwrap();
             let child = convert_child_path(&fp);
-            ShortcutPath { parent: path_variant, child }
+            ShortcutPath { parent, child, kind: PathKind::Standard }
     }).collect();
     shortcut_paths
 }
@@ -222,9 +214,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (root, _) = compact_home(&root, prefix).unwrap();
 
     // Root
-    let parent = PathVariant { path: root.display().to_string(), kind: PathKind::Environment };
-    let child = convert_child_path(&root);
-    let root_shortcut = ShortcutPath { parent, child };
+    let root_shortcut = ShortcutPath {
+        parent: root.display().to_string(),
+        child: convert_child_path(&root),
+        kind: PathKind::Environment
+    };
 
     let mut shortcut_paths = to_shortcut_paths(folders);
     

@@ -92,7 +92,7 @@ pub fn to_shortcuts(folders: Vec<walkdir::DirEntry>) -> Vec<Shortcut> {
     shortcut_paths
 }
 
-// Root & ExpandPrefix
+// Root & SubstitutePrefix
 #[derive(Clone)]
 pub struct Root {
     pub root: PathBuf,
@@ -135,7 +135,6 @@ pub fn expand_home(root: &Root) -> Option<(PathBuf, String)> {
     expand("~")
         .map_or_else(|| expand("$HOME"), Some)
         .map_or_else(|| expand("${HOME}"), Some)
-
 }
 
 pub fn compact_home(root: &Root, home_prefix: String) -> Option<(PathBuf, String)> {
@@ -170,24 +169,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         .filter(|f| f.path().is_dir())
         .collect();
 
+    // Compact HOME Prefixes
     let root = Root { root };
     let (root, _) = compact_home(&root, prefix).unwrap();
 
-    // Root
-    let name = convert_child_path(&root);
+    let child = convert_child_path(&root);
     let root_shortcut = Shortcut {
-        name: name.clone(),
+        name: child.clone(),
         parent: root.display().to_string(),
-        child: name,
+        child,
         kind: PathKind::Environment
     };
 
     // Convert the children to standard shortcuts
-    let mut shortcuts = to_shortcuts(folders);
-    
-    shortcuts.reverse();
-    shortcuts.push(root_shortcut);
-    shortcuts.reverse();
+    let mut shortcuts = vec![root_shortcut];
+    shortcuts.append(&mut to_shortcuts(folders));
     
     println!("Created shortcuts for: ");
     shortcuts.iter().for_each(|s| println!("\t{}", s.to_env_path().display()));

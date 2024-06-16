@@ -15,26 +15,22 @@ pub struct Shortcut {
     pub path: ShortcutPath,
 }
 
+pub struct ShortcutPath {
+    pub parent: PathVariant,
+    pub child: String,
+}
+
+// PathKind & PathVariant
 #[derive(Clone, Debug)]
 pub enum PathKind {
     Standard,
     Environment,
 }
 
-//pub enum PathKind {
-    //Child,
-    //Root,
-//}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PathVariant {
     pub path: String,
     pub kind: PathKind,
-}
-
-pub struct ShortcutPath {
-    pub parent: PathVariant,
-    pub child: String,
 }
 
 pub trait ToEnv {
@@ -48,11 +44,8 @@ impl ToEnv for ShortcutPath {
                 let parent = "$".to_owned() + &self.parent.path;
                 PathBuf::from(parent).join(PathBuf::from(self.child.clone()))
             },
-            //PathKind::Environment => get_home_dir()
-            //PathKind::Environment => PathBuf::from(self.parent.path.clone()),
             PathKind::Environment => {
                 PathBuf::from(self.parent.path.clone())
-                //PathBuf::from("~").join(self.parent.path.clone())
             },
         }
     }
@@ -84,7 +77,7 @@ pub fn get_path_variant(fp: &Path) -> PathKind {
     PathKind::Standard
 }
 
-pub fn convert_path(fp: &Path, path_kind: PathKind) -> PathVariant {
+pub fn convert_parent_path(fp: &Path, path_kind: PathKind) -> PathVariant {
     let path = match path_kind {
         PathKind::Standard => { fp.parent().unwrap().file_name().unwrap().to_os_string().into_string().unwrap() },
         PathKind::Environment => {
@@ -94,16 +87,18 @@ pub fn convert_path(fp: &Path, path_kind: PathKind) -> PathVariant {
     PathVariant { path, kind: path_kind }
 }
 
+pub fn convert_child_path(fp: &Path) -> String {
+    fp.file_name().unwrap().to_os_string().into_string().unwrap()
+}
+
 pub fn to_shortcut_paths(folders: Vec<walkdir::DirEntry>) -> Vec<ShortcutPath> {
     let shortcut_paths: Vec<ShortcutPath> = folders
         .into_iter()
         .map(|folder| {
             let fp = folder.into_path();
 
-
-            // What do we want?
-            // We want control over how our path gets converted into a shortcut path
-
+            // Converting into Shortcut Paths
+            // 
             // File Path Type Detections
             // 1. We need to classify different kinds of file paths
             // 2. We need to detect the variants in a cross-platform way
@@ -122,9 +117,9 @@ pub fn to_shortcut_paths(folders: Vec<walkdir::DirEntry>) -> Vec<ShortcutPath> {
             let path_kind = get_path_variant(&fp);
             println!("Path Kind: {:?}", path_kind);
 
-            let path_variant = convert_path(&fp, path_kind);
-            //println!("Path Variant: {:?}", path_kind);
-            let child = fp.file_name().unwrap().to_os_string().into_string().unwrap();
+            let path_variant = convert_parent_path(&fp, path_kind);
+            println!("Path Variant: {:?}", path_variant);
+            let child = convert_child_path(&fp);
             ShortcutPath { parent: path_variant, child }
     }).collect();
     shortcut_paths
@@ -166,20 +161,18 @@ impl SubstitutePrefix for Root {
     }
 }
 
-//pub fn expand_prefix(root: &Root, base: &str) -> Option<PathBuf> {
-pub fn expand_prefix(root: &Root, base: &str) -> Option<(PathBuf, String)> {
+pub fn sub_path(root: &Root, base: &str, replace_with: String) -> Option<(PathBuf, String)> {
     if root.starts_with(base) {
         let root_span = root
-            .sub_prefix(base, get_home_dir().display().to_string())
+            .sub_prefix(base, replace_with)
             .unwrap_or_else(|_| panic!("Could not substitute prefix for {}", root.root.display()));
         return Some(root_span);
     }
     None
-}
 
-//pub fn expand_home(root: &Root) -> Option<PathBuf> {
+}
 pub fn expand_home(root: &Root) -> Option<(PathBuf, String)> {
-    let expand = |base| expand_prefix(root, base);
+    let expand = |base| sub_path(root, base, get_home_dir().display().to_string());
 
     expand("~")
         .map_or_else(|| expand("$HOME"), Some)
@@ -187,19 +180,8 @@ pub fn expand_home(root: &Root) -> Option<(PathBuf, String)> {
 
 }
 
-pub fn compact_prefix(root: &Root, base: &str) -> Option<(PathBuf, String)> {
-    if root.starts_with(base) {
-        let root_span = root
-            .sub_prefix(base, "~".to_string())
-            .unwrap_or_else(|_| panic!("Could not substitute prefix for {}", root.root.display()));
-        return Some(root_span);
-    }
-    None
-}
-
-pub fn compact_home(root: &Root) -> Option<(PathBuf, String)> {
-    let compact = |base| compact_prefix(root, base);
-    compact(get_home_dir().to_str().unwrap())
+pub fn compact_home(root: &Root, home_prefix: String) -> Option<(PathBuf, String)> {
+    sub_path(root, get_home_dir().to_str().unwrap(), home_prefix)
 }
 
 pub fn span_path_exists(sp: Option<(PathBuf, String)>) -> bool {
@@ -210,22 +192,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     
     let (root, depth, dest) = (args.root, args.depth, args.dest);
-
-    // Expand root
     let root = Root { root };
 
-    //let expand_prefix = |base| { expand_home(root, base) };
+    // Expand HOME prefixes
     let span_root = expand_home(&root);
 
-    //let (span_root_path, prefix) = span_root;
-    //println!("{:?}", span_root.clone());
-
     if !span_path_exists(span_root.clone()) {
-    //if !span_path_exists(span_root_path.clone()) {
         eprintln!("{} does not exist.", root.root.display());
         panic!("Root folder does not exist.");
     } 
-    //let root = span_root.unwrap();
     let (root, prefix) = span_root.unwrap();
 
     // Collect all the folders under the root directory
@@ -242,22 +217,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     // expandable paths like root, differently than normal paths.
     // We want to avoid the headache so we intentionally filter these variants out
     // of our homogenous collection
+
     let root = Root { root };
-    //let (root, prefix) = root.sub_prefix(root.root.to_str().unwrap(), prefix).unwrap();
-    //let (root, prefix) = root.(root.root.to_str().unwrap(), prefix).unwrap();
-
-    let (root, prefix) = compact_home(&root).unwrap();
-
-    println!("{} {}", root.display(), prefix);
+    let (root, _) = compact_home(&root, prefix).unwrap();
 
     // Root
-    let root_shortcut = ShortcutPath { 
-        parent: PathVariant {
-            path: root.display().to_string(),
-            kind: PathKind::Environment
-        },
-        child: root.file_name().unwrap().to_os_string().into_string().unwrap()
-    };
+    let parent = PathVariant { path: root.display().to_string(), kind: PathKind::Environment };
+    let child = convert_child_path(&root);
+    let root_shortcut = ShortcutPath { parent, child };
 
     let mut shortcut_paths = to_shortcut_paths(folders);
     
@@ -268,7 +235,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shortcuts = to_shortcuts(shortcut_paths);
     
     println!("Creating shortcuts for: ");
-    //shortcuts.iter().for_each(|s| println!("\t{}", s.path.to_env_string()));
     shortcuts.iter().for_each(|s| println!("\t{}", s.path.to_env_path().display()));
 
     // Convert to bash script

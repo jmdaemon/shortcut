@@ -27,7 +27,6 @@ pub enum PathKind {
 //}
 
 #[derive(Clone)]
-//pub struct ShortPath {
 pub struct PathVariant {
     pub path: String,
     pub kind: PathKind,
@@ -146,24 +145,24 @@ pub struct Root {
     pub root: PathBuf,
 }
 
-pub trait ExpandPrefix {
+pub trait SubstitutePrefix {
     fn starts_with(&self, base: &str) -> bool;
-    fn expand_prefix(&self, base: &str, expands_to: String) -> Result<(PathBuf, String), Box<dyn Error>>;
+    fn sub_prefix(&self, base: &str, expands_to: String) -> Result<(PathBuf, String), Box<dyn Error>>;
 }
 
-impl ExpandPrefix for Root {
+impl SubstitutePrefix for Root {
     fn starts_with(&self, base: &str) -> bool {
         self.root.starts_with(base)
     }
 
-    fn expand_prefix(&self, base: &str, expands_to: String) -> Result<(PathBuf, String), Box<dyn Error>> {
+    fn sub_prefix(&self, base: &str, replace_with: String) -> Result<(PathBuf, String), Box<dyn Error>> {
         if self.starts_with(base) {
             let children = self.root.strip_prefix(base)?;
-            let prefix = PathBuf::from(expands_to);
+            let prefix = PathBuf::from(replace_with);
             let root = prefix.join(children);
             return Ok((root, base.to_string()))
         }
-        panic!("Could not expand prefix");
+        panic!("Could not substitute prefix");
     }
 }
 
@@ -171,8 +170,8 @@ impl ExpandPrefix for Root {
 pub fn expand_prefix(root: &Root, base: &str) -> Option<(PathBuf, String)> {
     if root.starts_with(base) {
         let root_span = root
-            .expand_prefix(base, get_home_dir().display().to_string())
-            .unwrap_or_else(|_| panic!("Could not expand prefix for {}", root.root.display()));
+            .sub_prefix(base, get_home_dir().display().to_string())
+            .unwrap_or_else(|_| panic!("Could not substitute prefix for {}", root.root.display()));
         return Some(root_span);
     }
     None
@@ -188,41 +187,24 @@ pub fn expand_home(root: &Root) -> Option<(PathBuf, String)> {
 
 }
 
-pub trait ContractPrefix {
-    fn sub_for(&self, base: &str) -> bool;
-    fn contract_prefix(&self, base: &str, expands_to: String) -> Result<(PathBuf, String), Box<dyn Error>>;
-}
-
-impl ContractPrefix for Root {
-    fn sub_for(&self, base: &str) -> bool {
-        self.root.starts_with(base)
-    }
-
-    fn contract_prefix(&self, base: &str, contracts_to: String) -> Result<(PathBuf, String), Box<dyn Error>> {
-        if self.sub_for(base) {
-            let children = self.root.strip_prefix(base)?;
-            let prefix = PathBuf::from(contracts_to);
-            let root = prefix.join(children);
-            return Ok((root, base.to_string()))
-        }
-        panic!("Could not contract prefix");
-    }
-}
-
-pub fn contract_prefix(root: &Root, base: &str) -> Option<(PathBuf, String)> {
+pub fn compact_prefix(root: &Root, base: &str) -> Option<(PathBuf, String)> {
     if root.starts_with(base) {
-        let root_cont = root
-            .contract_prefix(base, get_home_dir().display().to_string())
-            .unwrap_or_else(|_| panic!("Could not expand prefix for {}", root.root.display()));
-        return Some(root_cont);
+        let root_span = root
+            .sub_prefix(base, "~".to_string())
+            .unwrap_or_else(|_| panic!("Could not substitute prefix for {}", root.root.display()));
+        return Some(root_span);
     }
     None
+}
+
+pub fn compact_home(root: &Root) -> Option<(PathBuf, String)> {
+    let compact = |base| compact_prefix(root, base);
+    compact(get_home_dir().to_str().unwrap())
 }
 
 pub fn span_path_exists(sp: Option<(PathBuf, String)>) -> bool {
     sp.is_none() || sp.unwrap().0.exists()
 }
-
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
@@ -260,44 +242,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     // expandable paths like root, differently than normal paths.
     // We want to avoid the headache so we intentionally filter these variants out
     // of our homogenous collection
+    let root = Root { root };
+    //let (root, prefix) = root.sub_prefix(root.root.to_str().unwrap(), prefix).unwrap();
+    //let (root, prefix) = root.(root.root.to_str().unwrap(), prefix).unwrap();
 
+    let (root, prefix) = compact_home(&root).unwrap();
+
+    println!("{} {}", root.display(), prefix);
 
     // Root
-    //let child = root.clone();
-
-    let root = Root { root };
-    let child = root.root.clone();
-
-    // Change to comp_root
-    // Change to shrink
-    //let root_obj = Root { root };
-    //let cont_root = root.contract_prefix("~", get_home_dir().display().to_string());
-    let cont_root = root.contract_prefix(&get_home_dir().display().to_string(), "~".to_string());
-
-    //let contract = |base| contract_prefix(&root, base);
-
-    //let contract = |base| contract_prefix(&cont_root, base);
-    //let cont_root = contract(get_home_dir().to_str().unwrap());
-    let (comp_root, prefix) = cont_root.unwrap();
-
-    //if !cont_path_exists(cont_root.clone()) {
-
-    //if !span_path_exists(cont_root.clone()) {
-        ////if !span_path_exists(cont_root.clone()) {
-        //eprintln!("{} does not exist.", root.root.display());
-        //panic!("Prefix does not exist.");
-    //}
-
-    //let (comp_root, prefix) = cont_root.unwrap();
-
     let root_shortcut = ShortcutPath { 
         parent: PathVariant {
-            //path: root.display().to_string(),
-            path: comp_root.display().to_string(),
+            path: root.display().to_string(),
             kind: PathKind::Environment
         },
-        //child: root.file_name().unwrap().to_os_string().into_string().unwrap()
-        child: child.file_name().unwrap().to_os_string().into_string().unwrap()
+        child: root.file_name().unwrap().to_os_string().into_string().unwrap()
     };
 
     let mut shortcut_paths = to_shortcut_paths(folders);

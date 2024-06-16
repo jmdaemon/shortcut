@@ -10,10 +10,25 @@ use clap::Parser;
 use shortcut::app::Args;
 use walkdir::WalkDir;
 
+// Treat roots differently from any other kind of directory
+//pub struct ShortcutRootPath {
+    //pub root: String,
+//}
+
 pub struct Shortcut {
     pub name: String,
     pub path: ShortcutPath,
 }
+
+//pub struct ShortcutsTree {
+    //pub root: ShortcutRootPath,
+    //pub branches: Vec<ShortcutPath>
+//}
+
+//pub struct Shortcut {
+    //pub name: String,
+    //pub path: ShortcutPath,
+//}
 
 #[derive(Clone, Debug)]
 //pub enum ShortPathKind {
@@ -21,6 +36,11 @@ pub enum PathKind {
     Standard,
     Environment,
 }
+
+//pub enum PathKind {
+    //Child,
+    //Root,
+//}
 
 #[derive(Clone)]
 //pub struct ShortPath {
@@ -85,7 +105,11 @@ impl ToEnv for ShortcutPath {
                 PathBuf::from(parent).join(PathBuf::from(self.child.clone()))
             },
             //PathKind::Environment => get_home_dir()
-            PathKind::Environment => PathBuf::from(self.parent.path.clone()),
+            //PathKind::Environment => PathBuf::from(self.parent.path.clone()),
+            PathKind::Environment => {
+                PathBuf::from(self.parent.path.clone())
+                //PathBuf::from("~").join(self.parent.path.clone())
+            },
         }
         //let parent = "$".to_owned() + &self.parent;
         //let result = PathBuf::from(parent);
@@ -164,7 +188,8 @@ pub fn to_shortcut_paths(folders: Vec<walkdir::DirEntry>) -> Vec<ShortcutPath> {
             // - "/home/user/my-folder"
 
             let path_kind = get_path_variant(&fp);
-            //println!("Path Kind: {:?}", path_kind);
+            println!("Path Kind: {:?}", path_kind);
+
             let path_variant = convert_path(&fp, path_kind);
             //println!("Path Variant: {:?}", path_kind);
             let child = fp.file_name().unwrap().to_os_string().into_string().unwrap();
@@ -202,30 +227,262 @@ pub struct HomePathVarVariant {
 pub fn get_home_path_variant() {
 }
 
+
+// Root & ExpandPrefix
+#[derive(Clone)]
+pub struct Root {
+    pub root: PathBuf,
+}
+
+pub trait ExpandPrefix {
+    fn starts_with(&self, base: &str) -> bool;
+    fn expand_prefix(&self, base: &str, expands_to: String) -> Result<(PathBuf, String), Box<dyn Error>>;
+}
+
+impl ExpandPrefix for Root {
+    fn starts_with(&self, base: &str) -> bool {
+        self.root.starts_with(base)
+    }
+
+    fn expand_prefix(&self, base: &str, expands_to: String) -> Result<(PathBuf, String), Box<dyn Error>> {
+        if self.starts_with(base) {
+            let children = self.root.strip_prefix(base)?;
+            let prefix = PathBuf::from(expands_to);
+            let root = prefix.join(children);
+            return Ok((root, base.to_string()))
+        }
+        panic!("Could not expand prefix");
+    }
+}
+
+//pub fn expand_prefix(root: &Root, base: &str) -> Option<PathBuf> {
+pub fn expand_prefix(root: &Root, base: &str) -> Option<(PathBuf, String)> {
+    if root.starts_with(base) {
+        let root_span = root
+            .expand_prefix(base, get_home_dir().display().to_string())
+            .unwrap_or_else(|_| panic!("Could not expand prefix for {}", root.root.display()));
+        //println!("{:?}", root_span.clone());
+            //.expect(&format!("Could not expand prefix for {}", root.root.display()));
+        return Some(root_span);
+    }
+    None
+}
+
+//pub fn expand_home(root: &Root) -> Option<PathBuf> {
+pub fn expand_home(root: &Root) -> Option<(PathBuf, String)> {
+    //let expand = |base| expand_prefix(root, base);
+    let expand = |base| expand_prefix(root, base);
+    //expand_prefix(root, "~")
+        //.map_or(None , |_| expand_prefix(root, "$HOME"))
+        //.map_or(None , |_| expand_prefix(root, "${HOME}"))
+    //expand_prefix(root, "~")
+        //.and_then(|_| expand_prefix(root, "$HOME"))
+        //.and_then(|_| expand_prefix(root, "${HOME}"))
+
+    //expand("~")
+        //.map_or_else(|| expand("$HOME"), expand("${HOME}"))
+
+        //.and_then(|_| expand("$HOME"))
+        //.and_then(|_| expand("${HOME}"))
+        //.and_then(|_| expand_prefix(root, "~"))
+
+    //root.expand_prefix("~", get_home_dir())
+
+    //expand_prefix(root, "~")
+        //.map_or_else(|| expand_prefix(root, "$HOME"), Some)
+        //.map_or_else(|| expand_prefix(root, "${HOME}"), Some)
+
+    expand("~")
+        .map_or_else(|| expand("$HOME"), Some)
+        .map_or_else(|| expand("${HOME}"), Some)
+
+}
+
+pub trait ContractPrefix {
+    fn sub_for(&self, base: &str) -> bool;
+    fn contract_prefix(&self, base: &str, expands_to: String) -> Result<(PathBuf, String), Box<dyn Error>>;
+}
+
+impl ContractPrefix for Root {
+    fn sub_for(&self, base: &str) -> bool {
+        self.root.starts_with(base)
+    }
+
+    fn contract_prefix(&self, base: &str, contracts_to: String) -> Result<(PathBuf, String), Box<dyn Error>> {
+        if self.sub_for(base) {
+            let children = self.root.strip_prefix(base)?;
+            let prefix = PathBuf::from(contracts_to);
+            let root = prefix.join(children);
+            return Ok((root, base.to_string()))
+        }
+        panic!("Could not contract prefix");
+    }
+}
+
+pub fn contract_prefix(root: &Root, base: &str) -> Option<(PathBuf, String)> {
+    if root.starts_with(base) {
+        let root_cont = root
+            .contract_prefix(base, get_home_dir().display().to_string())
+            .unwrap_or_else(|_| panic!("Could not expand prefix for {}", root.root.display()));
+        return Some(root_cont);
+    }
+    None
+}
+
+//pub fn span_path_exists(sp: Option<PathBuf>) -> bool {
+pub fn span_path_exists(sp: Option<(PathBuf, String)>) -> bool {
+    //sp.is_none() || sp.map_or(false, |f| !f.exists())
+    //sp.is_none() || sp.map_or_else(false, |f| !f.exists())
+    //sp.is_none() || sp.map(|f| !f.exists()).unwrap()
+    sp.is_none() || sp.unwrap().0.exists()
+}
+
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     
-    let mut root = args.root;
-    let mut original = root.clone();
+    let (root, depth, dest) = (args.root, args.depth, args.dest);
+
+    // Expand root
+    let root = Root { root };
+
+    //let expand_prefix = |base| { expand_home(root, base) };
+    let span_root = expand_home(&root);
+
+    //let (span_root_path, prefix) = span_root;
+    //println!("{:?}", span_root.clone());
+
+    if !span_path_exists(span_root.clone()) {
+    //if !span_path_exists(span_root_path.clone()) {
+        eprintln!("{} does not exist.", root.root.display());
+        panic!("Root folder does not exist.");
+    } 
+    //let root = span_root.unwrap();
+    let (root, prefix) = span_root.unwrap();
+
+    // Collect all the folders under the root directory
+    let folders: Vec<walkdir::DirEntry> = WalkDir::new(root.clone())
+        .max_depth(depth)
+        .into_iter()
+        .skip(1)
+        .filter_map(|e| e.ok())
+        .filter(|f| f.path().is_dir())
+        .collect();
+
+    // NOTE:
+    // We skip the root here in our collection since we want to treat
+    // expandable paths like root, differently than normal paths.
+    // We want to avoid the headache so we intentionally filter these variants out
+    // of our homogenous collection
+
+
+    // Root
+    //let child = root.clone();
+
+    let root = Root { root };
+    let child = root.root.clone();
+
+    // Change to comp_root
+    // Change to shrink
+    //let root_obj = Root { root };
+    //let cont_root = root.contract_prefix("~", get_home_dir().display().to_string());
+    let cont_root = root.contract_prefix(&get_home_dir().display().to_string(), "~".to_string());
+
+    //let contract = |base| contract_prefix(&root, base);
+
+    //let contract = |base| contract_prefix(&cont_root, base);
+    //let cont_root = contract(get_home_dir().to_str().unwrap());
+    let (comp_root, prefix) = cont_root.unwrap();
+
+    //if !cont_path_exists(cont_root.clone()) {
+
+    //if !span_path_exists(cont_root.clone()) {
+        ////if !span_path_exists(cont_root.clone()) {
+        //eprintln!("{} does not exist.", root.root.display());
+        //panic!("Prefix does not exist.");
+    //}
+
+    //let (comp_root, prefix) = cont_root.unwrap();
+
+    let root_shortcut = ShortcutPath { 
+        parent: PathVariant {
+            //path: root.display().to_string(),
+            path: comp_root.display().to_string(),
+            kind: PathKind::Environment
+        },
+        //child: root.file_name().unwrap().to_os_string().into_string().unwrap()
+        child: child.file_name().unwrap().to_os_string().into_string().unwrap()
+    };
+
+    let mut shortcut_paths = to_shortcut_paths(folders);
+    
+    shortcut_paths.reverse();
+    shortcut_paths.push(root_shortcut);
+    shortcut_paths.reverse();
+
+    let shortcuts = to_shortcuts(shortcut_paths);
+    
+    println!("Creating shortcuts for: ");
+    //shortcuts.iter().for_each(|s| println!("\t{}", s.path.to_env_string()));
+    shortcuts.iter().for_each(|s| println!("\t{}", s.path.to_env_path().display()));
+
+    // Convert to bash script
+    to_bash(&dest, shortcuts)?;
+    println!("Wrote shortcuts to {}", dest.display());
+    
+    Ok(())
+
+    //if let Some(root) = span_root {
+        //if !root.exists() {
+            //eprintln!("{} does not exist.", root.display());
+            //panic!("Root folder does not exist.");
+        //}
+    //} else {
+        //eprintln!("{} does not exist.", root.root.display());
+        //panic!("Root folder does not exist.");
+    //}
+    
+
+
+    //if span_root.is_none() || ( )
+
+    //let span_root = expand_prefix("~").map.or(expand_prefix("$HOME"));
+    //let span_root = expand_prefix("$HOME").map_or(|a, b| { expand_prefix("$HOME")});
+    //let span_root = expand_home(root, "~")
+        //.or_else(|f| {
+
+        //});
+//|f| expand_home(root, "$HOME")
+        //.or_else(expand_home(root, "${HOME}"));
+
+    //if root.starts_with("~") {
+        //let root_span =
+            //root.expand_prefix("~", get_home_dir().display().to_string())
+            //.expect(&format!("Could not expand prefix for {}", root.root.display()));
+    //}
+
+
+    //let mut root = args.root;
+    //let mut original = root.clone();
 
     // Common HOME variants
-    let home_tilde = HomePathVarVariant { base: "~".to_string(), kind: HomePathVarKind::TILDE };
-    let home = HomePathVarVariant { base: "$HOME".to_string(), kind: HomePathVarKind::HOME };
-    let home_curly = HomePathVarVariant { base: "${HOME}".to_string(), kind: HomePathVarKind::HOME_CURLY };
+    //let home_tilde = HomePathVarVariant { base: "~".to_string(), kind: HomePathVarKind::TILDE };
+    //let home = HomePathVarVariant { base: "$HOME".to_string(), kind: HomePathVarKind::HOME };
+    //let home_curly = HomePathVarVariant { base: "${HOME}".to_string(), kind: HomePathVarKind::HOME_CURLY };
 
     // Does root start with home?
-    if root.starts_with(&home_tilde.base) {
-        let rest = root.strip_prefix(home_tilde.base)?;
-        root = get_home_dir().join(rest);
-        println!("Starts with tilde");
-        println!("{}", root.display())
-    } else if root.starts_with(&home.base) {
-        let rest = root.strip_prefix(home.base)?;
-        root = get_home_dir().join(rest);
-    } else if root.starts_with(&home_curly.base) {
-        let rest = root.strip_prefix(home_curly.base)?;
-        root = get_home_dir().join(rest);
-    }
+    //if root.starts_with(&home_tilde.base) {
+        //let rest = root.strip_prefix(home_tilde.base)?;
+        //root = get_home_dir().join(rest);
+        //println!("Starts with tilde");
+        //println!("{}", root.display())
+    //} else if root.starts_with(&home.base) {
+        //let rest = root.strip_prefix(home.base)?;
+        //root = get_home_dir().join(rest);
+    //} else if root.starts_with(&home_curly.base) {
+        //let rest = root.strip_prefix(home_curly.base)?;
+        //root = get_home_dir().join(rest);
+    //}
 
     // The issue comes when we treat root as a homogenous directory
     // We both want to treat root homogenously and yet differently
@@ -248,51 +505,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     //}
 
 
-    let depth = args.depth;
-    let dest = args.dest;
+    //let depth = args.depth;
+    //let dest = args.dest;
 
-    if !root.exists() {
-        eprintln!("{} does not exist.", root.display());
-        panic!("Root folder does not exist.");
-    }
+    //if !root.exists() {
+        //eprintln!("{} does not exist.", root.display());
+        //panic!("Root folder does not exist.");
+    //}
     
-    // Collect all the folders under the root directory
-    let mut folders: Vec<walkdir::DirEntry> = WalkDir::new(root)
-        .max_depth(depth)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|f| f.path().is_dir())
-        .collect();
+
 
     // Remove root and treat it separately
-    folders.reverse();
-    folders.pop();
-    folders.reverse();
 
-    // Root
-    let root_shortcut = ShortcutPath { 
-        parent: PathVariant {
-            path: original.display().to_string(),
-            kind: PathKind::Environment
-        },
-        child: original.file_name().unwrap().to_os_string().into_string().unwrap()
-    };
-
-    let mut shortcut_paths = to_shortcut_paths(folders);
     
-    shortcut_paths.reverse();
-    shortcut_paths.push(root_shortcut);
-    shortcut_paths.reverse();
-
-    let shortcuts = to_shortcuts(shortcut_paths);
-    
-    println!("Creating shortcuts for: ");
-    //shortcuts.iter().for_each(|s| println!("\t{}", s.path.to_env_string()));
-    shortcuts.iter().for_each(|s| println!("\t{}", s.path.to_env_path().display()));
-
-    // Convert to bash script
-    to_bash(&dest, shortcuts)?;
-    println!("Wrote shortcuts to {}", dest.display());
-    
-    Ok(())
 }

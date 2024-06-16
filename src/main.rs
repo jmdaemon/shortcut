@@ -12,16 +12,12 @@ use walkdir::WalkDir;
 
 pub struct Shortcut {
     pub name: String,
-    pub path: ShortcutPath,
-}
-
-pub struct ShortcutPath {
     pub parent: String,
     pub child: String,
     pub kind: PathKind,
 }
 
-// PathKind & PathVariant
+// PathKind
 #[derive(Clone, Debug)]
 pub enum PathKind {
     Standard,
@@ -32,7 +28,7 @@ pub trait ToEnv {
     fn to_env_path(&self) -> PathBuf;
 }
 
-impl ToEnv for ShortcutPath {
+impl ToEnv for Shortcut {
     fn to_env_path(&self) -> PathBuf {
         match self.kind {
             PathKind::Standard => {
@@ -51,8 +47,7 @@ pub fn to_bash(fp: &Path, shortcuts: Vec<Shortcut>) -> Result<(), Box<dyn Error>
     file.write_all(b"#!/bin/bash\n\n")?;
 
     for s in shortcuts {
-        let (name, shortcut_path) = (s.name, s.path);
-        let line = format!("export {}=\"{}\"\n", name, shortcut_path.to_env_path().display());
+        let line = format!("export {}=\"{}\"\n", s.name.clone(), s.to_env_path().display());
         file.write_all(line.as_bytes())?;
     }
     Ok(())
@@ -82,8 +77,8 @@ pub fn convert_child_path(fp: &Path) -> String {
     fp.file_name().unwrap().to_os_string().into_string().unwrap()
 }
 
-pub fn to_shortcut_paths(folders: Vec<walkdir::DirEntry>) -> Vec<ShortcutPath> {
-    let shortcut_paths: Vec<ShortcutPath> = folders
+pub fn to_shortcuts(folders: Vec<walkdir::DirEntry>) -> Vec<Shortcut> {
+    let shortcut_paths: Vec<Shortcut> = folders
         .into_iter()
         .map(|folder| {
             let fp = folder.into_path();
@@ -112,18 +107,10 @@ pub fn to_shortcut_paths(folders: Vec<walkdir::DirEntry>) -> Vec<ShortcutPath> {
             //println!("Path Variant: {:?}", path_variant);
             let parent = fp.parent().unwrap().file_name().unwrap().to_os_string().into_string().unwrap();
             let child = convert_child_path(&fp);
-            ShortcutPath { parent, child, kind: PathKind::Standard }
+            let name = child.clone().replace("-", "");
+            Shortcut { name, parent, child, kind: PathKind::Standard }
     }).collect();
     shortcut_paths
-}
-
-pub fn to_shortcuts(shortcut_paths: Vec<ShortcutPath>) -> Vec<Shortcut> {
-    let shortcuts: Vec<Shortcut> = shortcut_paths
-        .into_iter()
-        .map(|sp| {
-            Shortcut { name: sp.child.clone().replace("-", ""), path: sp}
-        }).collect();
-    shortcuts
 }
 
 // Root & ExpandPrefix
@@ -214,22 +201,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (root, _) = compact_home(&root, prefix).unwrap();
 
     // Root
-    let root_shortcut = ShortcutPath {
+    let name = convert_child_path(&root);
+    let root_shortcut = Shortcut {
+        name: name.clone(),
         parent: root.display().to_string(),
-        child: convert_child_path(&root),
+        child: name,
         kind: PathKind::Environment
     };
 
-    let mut shortcut_paths = to_shortcut_paths(folders);
+    let mut shortcuts = to_shortcuts(folders);
     
-    shortcut_paths.reverse();
-    shortcut_paths.push(root_shortcut);
-    shortcut_paths.reverse();
-
-    let shortcuts = to_shortcuts(shortcut_paths);
+    shortcuts.reverse();
+    shortcuts.push(root_shortcut);
+    shortcuts.reverse();
     
-    println!("Creating shortcuts for: ");
-    shortcuts.iter().for_each(|s| println!("\t{}", s.path.to_env_path().display()));
+    println!("Created shortcuts for: ");
+    shortcuts.iter().for_each(|s| println!("\t{}", s.to_env_path().display()));
 
     // Convert to bash script
     to_bash(&dest, shortcuts)?;

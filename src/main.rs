@@ -81,33 +81,12 @@ pub fn to_shortcuts(folders: Vec<walkdir::DirEntry>) -> Vec<Shortcut> {
     let shortcut_paths: Vec<Shortcut> = folders
         .into_iter()
         .map(|folder| {
+
             let fp = folder.into_path();
-
-            // Converting into Shortcut Paths
-            // 
-            // File Path Type Detections
-            // 1. We need to classify different kinds of file paths
-            // 2. We need to detect the variants in a cross-platform way
-            // 3. We also need to detect these variants of paths in a cross-platform way
-            //
-            // Solution
-            // 1. We classify different paths with an enum PathKind: Environment, Standard
-            // 2. We detect the variants using
-            //
-            // Cases:
-            // Linux:
-            // - "~/my-folder"
-            // - "$HOME/my-folder"
-            // - "/home/user/my-folder"
-
-            //let path_kind = get_path_variant(&fp);
-            //println!("Path Kind: {:?}", path_kind);
-
-            //let path_variant = convert_parent_path(&fp, path_kind);
-            //println!("Path Variant: {:?}", path_variant);
             let parent = fp.parent().unwrap().file_name().unwrap().to_os_string().into_string().unwrap();
             let child = convert_child_path(&fp);
             let name = child.clone().replace("-", "");
+
             Shortcut { name, parent, child, kind: PathKind::Standard }
     }).collect();
     shortcut_paths
@@ -148,8 +127,8 @@ pub fn sub_path(root: &Root, base: &str, replace_with: String) -> Option<(PathBu
         return Some(root_span);
     }
     None
-
 }
+
 pub fn expand_home(root: &Root) -> Option<(PathBuf, String)> {
     let expand = |base| sub_path(root, base, get_home_dir().display().to_string());
 
@@ -191,12 +170,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         .filter(|f| f.path().is_dir())
         .collect();
 
-    // NOTE:
-    // We skip the root here in our collection since we want to treat
-    // expandable paths like root, differently than normal paths.
-    // We want to avoid the headache so we intentionally filter these variants out
-    // of our homogenous collection
-
     let root = Root { root };
     let (root, _) = compact_home(&root, prefix).unwrap();
 
@@ -209,6 +182,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         kind: PathKind::Environment
     };
 
+    // Convert the children to standard shortcuts
     let mut shortcuts = to_shortcuts(folders);
     
     shortcuts.reverse();

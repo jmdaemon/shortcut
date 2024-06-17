@@ -149,6 +149,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     
     let (root, depth, dest) = (args.root, args.depth, args.dest);
+    let excludes = args.excludes;
+
     let root = Root { root };
 
     // Expand HOME prefixes
@@ -161,13 +163,46 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (root, prefix) = span_root.unwrap();
 
     // Collect all the folders under the root directory
-    let folders: Vec<walkdir::DirEntry> = WalkDir::new(root.clone())
+    let mut folders: Vec<walkdir::DirEntry> = WalkDir::new(root.clone())
         .max_depth(depth)
         .into_iter()
         .skip(1)
         .filter_map(|e| e.ok())
         .filter(|f| f.path().is_dir())
         .collect();
+
+    println!("{:?}", excludes);
+    // Exclude files
+    let folders = if let Some(entries) = excludes {
+        //let unzip: (Vec<walkdir::DirEntry>, Vec<String>) =
+        for entry in entries.into_iter() {
+            folders.retain(|f| {
+                f.file_name().to_str().unwrap() != entry
+            });
+            //folders.pop_if(|f| {
+                //f.file_name().to_str().unwrap() == &entry
+            //});
+            //if let Some(index) = folders.
+            //folders.remove(index)
+        }
+        folders
+        /*
+            folders.into_iter()
+            .zip(entries)
+            .filter(|(f, exclude)| {
+                //(&f.file_name().to_os_string().into_string().unwrap()) != exclude
+                //println!("{:?}");
+                //f.file_name().to_str().unwrap() != exclude
+                f.file_name().to_os_string().into_string().unwrap() != *exclude
+            })
+        .collect::<(Vec<walkdir::DirEntry>, Vec<String>)>().0
+        */
+        //.unzip();
+        //unzip.0
+        //.collect::<(Vec<walkdir::DirEntry>, Vec<String>)>().0
+    } else {
+        folders
+    };
 
     // Compact HOME Prefixes
     let root = Root { root };

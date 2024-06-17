@@ -171,7 +171,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Compact HOME Prefixes
     let root = Root { root };
-    let (root, _) = compact_home(&root, prefix).unwrap();
+    let (root, _) = compact_home(&root, "$HOME".to_string()).unwrap();
 
     let child = convert_child_path(&root);
     let root_shortcut = Shortcut {

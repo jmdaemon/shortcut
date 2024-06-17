@@ -17,4 +17,7 @@ pub struct Args {
     /// Destination file path
     #[arg(short, long)]
     pub dest: PathBuf,
+
+    #[arg(short, long)]
+    pub excludes: Option<Vec<String>>,
 }

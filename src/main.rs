@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("{} does not exist.", root.root.display());
         panic!("Root folder does not exist.");
     } 
-    let (root, prefix) = span_root.unwrap();
+    let (root, _) = span_root.unwrap();
 
     // Collect all the folders under the root directory
     let mut folders: Vec<walkdir::DirEntry> = WalkDir::new(root.clone())
@@ -174,32 +174,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("{:?}", excludes);
     // Exclude files
     let folders = if let Some(entries) = excludes {
-        //let unzip: (Vec<walkdir::DirEntry>, Vec<String>) =
         for entry in entries.into_iter() {
-            folders.retain(|f| {
-                f.file_name().to_str().unwrap() != entry
-            });
-            //folders.pop_if(|f| {
-                //f.file_name().to_str().unwrap() == &entry
-            //});
-            //if let Some(index) = folders.
-            //folders.remove(index)
+            folders.retain(|f| f.file_name().to_str().unwrap() != entry);
         }
         folders
-        /*
-            folders.into_iter()
-            .zip(entries)
-            .filter(|(f, exclude)| {
-                //(&f.file_name().to_os_string().into_string().unwrap()) != exclude
-                //println!("{:?}");
-                //f.file_name().to_str().unwrap() != exclude
-                f.file_name().to_os_string().into_string().unwrap() != *exclude
-            })
-        .collect::<(Vec<walkdir::DirEntry>, Vec<String>)>().0
-        */
-        //.unzip();
-        //unzip.0
-        //.collect::<(Vec<walkdir::DirEntry>, Vec<String>)>().0
     } else {
         folders
     };

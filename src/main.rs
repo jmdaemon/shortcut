@@ -171,16 +171,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         .filter(|f| f.path().is_dir())
         .collect();
 
-    println!("{:?}", excludes);
     // Exclude files
+
+    // Show file excludes
+    if excludes.is_some() { println!("Excluding"); }
+
     let folders = if let Some(entries) = excludes {
         for entry in entries.into_iter() {
-            folders.retain(|f| f.file_name().to_str().unwrap() != entry);
+            folders.retain(|f| {
+                match f.file_name().to_str().unwrap() != entry {
+                    true => true,
+                    false => { println!("\t{}", f.path().display()); false },
+                }
+            });
         }
         folders
     } else {
         folders
     };
+    
 
     // Compact HOME Prefixes
     let root = Root { root };
